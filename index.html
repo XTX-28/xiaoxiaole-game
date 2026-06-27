@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a2e">
+<title>消消乐堆叠</title>
+<link rel="manifest" href="manifest.json">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  color: #fff;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+#app {
+  display: flex; flex-direction: column;
+  width: 100%; height: 100%;
+  max-width: 500px; margin: 0 auto;
+}
+
+/* Header */
+#header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+#header .level-info {
+  font-size: 18px; font-weight: 700;
+  background: linear-gradient(90deg, #f7971e, #ffd200);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+#header .tile-count {
+  font-size: 14px; color: rgba(255,255,255,0.6);
+}
+
+/* Game Area */
+#game-wrapper {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 10px;
+  position: relative;
+  overflow: hidden;
+}
+#game-board {
+  position: relative;
+  transition: transform 0.3s ease;
+}
+
+/* Tiles */
+.tile {
+  position: absolute;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 -2px 0 rgba(0,0,0,0.08);
+  z-index: 1;
+}
+.tile:active { transform: scale(0.92); }
+.tile.blocked {
+  cursor: default;
+  filter: brightness(0.7) saturate(0.5);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+.tile.blocked:active { transform: none; }
+.tile .icon { font-size: 28px; line-height: 1; }
+.tile.removing {
+  animation: tileRemove 0.4s ease forwards;
+}
+@keyframes tileRemove {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.8; }
+  100% { transform: scale(0); opacity: 0; }
+}
+.tile.moving-to-slot {
+  transition: left 0.3s ease, top 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Slot Area */
+#slot-area {
+  padding: 10px 16px 6px;
+  background: rgba(255,255,255,0.04);
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+#slot-bar {
+  display: flex; gap: 4px;
+  justify-content: center;
+  min-height: 56px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 14px;
+  border: 2px dashed rgba(255,255,255,0.15);
+  position: relative;
+}
+.slot-tile {
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff;
+  border-radius: 8px;
+  font-size: 24px;
+  animation: slotIn 0.25s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.slot-tile.matched {
+  animation: slotMatch 0.45s ease forwards;
+}
+@keyframes slotIn {
+  from { transform: translateY(-30px) scale(0.5); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes slotMatch {
+  0% { transform: scale(1); opacity: 1; background: #fff; }
+  40% { transform: scale(1.2); background: #ffd200; }
+  100% { transform: scale(0); opacity: 0; }
+}
+
+/* Tools */
+#tools {
+  display: flex; justify-content: center; gap: 12px;
+  padding: 8px 16px 14px;
+}
+.tool-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 16px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tool-btn:active { transform: scale(0.93); background: rgba(255,255,255,0.15); }
+.tool-btn .emoji { font-size: 22px; }
+.tool-btn .count {
+  background: rgba(255,255,255,0.15);
+  border-radius: 8px; padding: 1px 6px;
+  font-size: 11px; color: rgba(255,255,255,0.7);
+}
+
+/* Overlay */
+#overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+#overlay.show { display: flex; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+#overlay-content {
+  text-align: center;
+  padding: 40px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.12);
+  animation: popIn 0.4s ease;
+}
+@keyframes popIn {
+  from { transform: scale(0.7); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+#overlay-title {
+  font-size: 32px; font-weight: 800;
+  margin-bottom: 8px;
+}
+#overlay-msg {
+  font-size: 16px; color: rgba(255,255,255,0.6);
+  margin-bottom: 24px;
+}
+#overlay-btn {
+  padding: 12px 40px;
+  background: linear-gradient(135deg, #f7971e, #ffd200);
+  border: none; border-radius: 30px;
+  color: #1a1a2e; font-size: 16px; font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+#overlay-btn:active { transform: scale(0.95); }
+
+/* Confetti */
+.confetti {
+  position: fixed;
+  width: 10px; height: 10px;
+  z-index: 1001;
+  animation: confettiFall linear forwards;
+}
+@keyframes confettiFall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <span class="level-info" id="level-label">第 1 关</span>
+    <span class="tile-count" id="tile-count">剩余: 0</span>
+  </div>
+  <div id="game-wrapper">
+    <div id="game-board"></div>
+  </div>
+  <div id="slot-area">
+    <div id="slot-bar"></div>
+  </div>
+  <div id="tools">
+    <div class="tool-btn" id="btn-undo" onclick="doUndo()">
+      <span class="emoji">↩️</span><span>撤回</span><span class="count" id="undo-count">3</span>
+    </div>
+    <div class="tool-btn" id="btn-shuffle" onclick="doShuffle()">
+      <span class="emoji">🔀</span><span>洗牌</span><span class="count" id="shuffle-count">2</span>
+    </div>
+    <div class="tool-btn" id="btn-bomb" onclick="doBomb()">
+      <span class="emoji">💣</span><span>移出</span><span class="count" id="bomb-count">1</span>
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div id="overlay-content">
+    <div id="overlay-title"></div>
+    <div id="overlay-msg"></div>
+    <button id="overlay-btn" onclick="onOverlayBtn()"></button>
+  </div>
+</div>
+
+<script>
+// ============ CONFIG ============
+const SLOT_MAX = 7;
+const ICONS = ['🐑','🐶','🐱','🐼','🦊','🐸','🐵','🐷','🐮','🐯','🐰','🐻'];
+const VISUAL_OFFSET = 8; // px offset per layer for visual depth
+
+// ============ LEVELS ============
+// Each layer uses same grid coordinates. Blocking = same (col,row) on higher layer.
+// Visual offset creates the "stacked" look.
+const LEVELS = [
+  { // Level 1: 18 tiles = 6 triplets (3 layers, easy intro)
+    layers: [
+      { cols: 3, rows: 3, grid: [[1,1,1],[1,1,1],[1,1,1]] },
+      { cols: 3, rows: 3, grid: [[0,0,0],[0,1,0],[0,1,0]] },
+      { cols: 3, rows: 3, grid: [[0,0,0],[0,1,0],[0,0,0]] }
+    ]
+  },
+  { // Level 2: 30 tiles = 10 triplets (3 layers, medium)
+    layers: [
+      { cols: 5, rows: 4, grid: [[1,1,1,1,1],[1,1,1,1,1],[1,1,1,1,1],[1,1,1,1,1]] },
+      { cols: 5, rows: 4, grid: [[0,0,0,0,0],[0,1,1,1,0],[0,1,1,1,0],[0,0,0,0,0]] },
+      { cols: 5, rows: 4, grid: [[0,0,0,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,0,0,0]] }
+    ]
+  },
+  { // Level 3: 63 tiles = 21 triplets (5 layers, hard)
+    layers: [
+      { cols: 6, rows: 5, grid: [[1,1,1,1,1,1],[1,1,1,1,1,1],[1,1,1,1,1,1],[1,1,1,1,1,1],[1,1,1,1,1,1]] },
+      { cols: 6, rows: 5, grid: [[0,0,0,0,0,0],[0,1,1,1,1,0],[0,1,1,1,1,0],[0,1,1,1,1,0],[0,0,0,0,0,0]] },
+      { cols: 6, rows: 5, grid: [[0,0,0,0,0,0],[0,0,0,0,0,0],[0,1,1,1,0,0],[0,1,1,1,0,0],[0,0,0,0,0,0]] },
+      { cols: 6, rows: 5, grid: [[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,1,1,0,0],[0,0,0,0,0,0]] },
+      { cols: 6, rows: 5, grid: [[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,1,1,0,0],[0,0,0,0,0,0]] }
+    ]
+  }
+];
+
+// ============ GAME STATE ============
+let tiles = [];
+let slotTiles = [];
+let currentLevel = 0;
+let cellSize = 60;
+let history = [];
+let tools = { undo: 3, shuffle: 2, bomb: 1 };
+let isAnimating = false;
+let overlayAction = null;
+
+// ============ DOM REFS ============
+const board = document.getElementById('game-board');
+const slotBar = document.getElementById('slot-bar');
+const levelLabel = document.getElementById('level-label');
+const tileCount = document.getElementById('tile-count');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayMsg = document.getElementById('overlay-msg');
+const overlayBtn = document.getElementById('overlay-btn');
+
+// ============ INIT ============
+function initLevel(levelIdx) {
+  if (levelIdx >= LEVELS.length) levelIdx = 0;
+  currentLevel = levelIdx;
+  const level = LEVELS[levelIdx];
+
+  // Calculate cell size to fit screen
+  const wrapper = document.getElementById('game-wrapper');
+  const maxW = wrapper.clientWidth - 20;
+  const maxH = wrapper.clientHeight - 20;
+  const gridCols = level.layers[0].cols;
+  const gridRows = level.layers[0].rows;
+  const numLayers = level.layers.length;
+  const extraW = (numLayers - 1) * VISUAL_OFFSET;
+  const extraH = (numLayers - 1) * VISUAL_OFFSET;
+  cellSize = Math.min(
+    Math.floor((maxW - extraW) / gridCols),
+    Math.floor((maxH - extraH) / gridRows),
+    65
+  );
+  cellSize = Math.max(cellSize, 36);
+
+  // Generate tiles
+  tiles = [];
+  let positions = [];
+  level.layers.forEach((layer, li) => {
+    for (let r = 0; r < layer.rows; r++) {
+      for (let c = 0; c < layer.cols; c++) {
+        if (layer.grid[r][c]) {
+          positions.push({ col: c, row: r, layer: li });
+        }
+      }
+    }
+  });
+
+  // Ensure divisible by 3
+  while (positions.length % 3 !== 0) positions.pop();
+
+  // Create triplets
+  const numTriplets = positions.length / 3;
+  let types = [];
+  for (let i = 0; i < numTriplets; i++) {
+    const icon = ICONS[i % ICONS.length];
+    types.push(icon, icon, icon);
+  }
+  shuffle(types);
+
+  // Assign
+  positions.forEach((pos, i) => {
+    tiles.push({
+      id: i,
+      type: types[i],
+      col: pos.col,
+      row: pos.row,
+      layer: pos.layer,
+      removed: false,
+      inSlot: false
+    });
+  });
+
+  slotTiles = [];
+  history = [];
+  tools = { undo: 3, shuffle: 2, bomb: 1 };
+
+  levelLabel.textContent = `第 ${levelIdx + 1} 关`;
+  updateUI();
+  render();
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ============ BLOCKING ============
+function isBlocked(tile) {
+  if (tile.removed || tile.inSlot) return false;
+  return tiles.some(t =>
+    !t.removed && !t.inSlot &&
+    t.layer > tile.layer &&
+    t.col === tile.col && t.row === tile.row
+  );
+}
+
+// ============ RENDER ============
+function render() {
+  board.innerHTML = '';
+
+  const level = LEVELS[currentLevel];
+  const gridCols = level.layers[0].cols;
+  const gridRows = level.layers[0].rows;
+  const numLayers = level.layers.length;
+  const boardW = gridCols * cellSize + (numLayers - 1) * VISUAL_OFFSET;
+  const boardH = gridRows * cellSize + (numLayers - 1) * VISUAL_OFFSET;
+  board.style.width = boardW + 'px';
+  board.style.height = boardH + 'px';
+
+  // Sort tiles by layer for z-index
+  const visibleTiles = tiles.filter(t => !t.removed && !t.inSlot);
+  visibleTiles.sort((a, b) => a.layer - b.layer);
+
+  visibleTiles.forEach(tile => {
+    const el = document.createElement('div');
+    el.className = 'tile' + (isBlocked(tile) ? ' blocked' : '');
+    el.style.width = cellSize + 'px';
+    el.style.height = cellSize + 'px';
+    el.style.left = (tile.col * cellSize + tile.layer * VISUAL_OFFSET) + 'px';
+    el.style.top = (tile.row * cellSize + tile.layer * VISUAL_OFFSET) + 'px';
+    el.style.zIndex = tile.layer * 10 + tile.row + tile.col;
+    el.style.fontSize = Math.floor(cellSize * 0.48) + 'px';
+
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = tile.type;
+    el.appendChild(icon);
+
+    if (!isBlocked(tile)) {
+      el.addEventListener('click', () => onTileTap(tile));
+    }
+    board.appendChild(el);
+  });
+
+  renderSlot();
+  updateUI();
+}
+
+function renderSlot() {
+  slotBar.innerHTML = '';
+  slotTiles.forEach(st => {
+    const el = document.createElement('div');
+    el.className = 'slot-tile';
+    el.textContent = st.type;
+    slotBar.appendChild(el);
+  });
+  // Fill empty slots
+  for (let i = slotTiles.length; i < SLOT_MAX; i++) {
+    const el = document.createElement('div');
+    el.className = 'slot-tile';
+    el.style.background = 'rgba(255,255,255,0.05)';
+    el.style.boxShadow = 'none';
+    slotBar.appendChild(el);
+  }
+}
+
+function updateUI() {
+  const remaining = tiles.filter(t => !t.removed && !t.inSlot).length;
+  tileCount.textContent = `剩余: ${remaining}`;
+  document.getElementById('undo-count').textContent = tools.undo;
+  document.getElementById('shuffle-count').textContent = tools.shuffle;
+  document.getElementById('bomb-count').textContent = tools.bomb;
+}
+
+// ============ GAME LOGIC ============
+function onTileTap(tile) {
+  if (isAnimating || tile.removed || tile.inSlot || isBlocked(tile)) return;
+  if (slotTiles.length >= SLOT_MAX) return;
+
+  isAnimating = true;
+
+  // Save to history
+  history.push({
+    tileId: tile.id,
+    slotSnapshot: slotTiles.map(s => ({ ...s }))
+  });
+
+  // Find insertion index: next to same type if exists
+  let insertIdx = slotTiles.length;
+  for (let i = 0; i < slotTiles.length; i++) {
+    if (slotTiles[i].type === tile.type) {
+      // Find end of this group
+      let j = i;
+      while (j < slotTiles.length && slotTiles[j].type === tile.type) j++;
+      insertIdx = j;
+      break;
+    }
+  }
+
+  tile.inSlot = true;
+  slotTiles.splice(insertIdx, 0, { id: tile.id, type: tile.type });
+
+  render();
+
+  // Check for match after short delay
+  setTimeout(() => {
+    checkSlotMatch();
+    isAnimating = false;
+  }, 280);
+}
+
+function checkSlotMatch() {
+  // Count types in slot
+  const counts = {};
+  slotTiles.forEach(s => { counts[s.type] = (counts[s.type] || 0) + 1; });
+
+  let matched = false;
+  for (const type in counts) {
+    if (counts[type] >= 3) {
+      matched = true;
+      // Remove 3 of this type
+      let removed = 0;
+      const matchedIds = [];
+      slotTiles = slotTiles.filter(s => {
+        if (s.type === type && removed < 3) {
+          removed++;
+          matchedIds.push(s.id);
+          return false;
+        }
+        return true;
+      });
+      // Mark tiles as removed
+      matchedIds.forEach(id => {
+        const t = tiles.find(t => t.id === id);
+        if (t) { t.removed = true; t.inSlot = false; }
+      });
+
+      // Animate match
+      animateMatch();
+      return;
+    }
+  }
+
+  if (!matched) {
+    // Check game over
+    if (slotTiles.length >= SLOT_MAX) {
+      setTimeout(() => showOverlay('gameover'), 300);
+    }
+  }
+}
+
+function animateMatch() {
+  const slotEls = slotBar.querySelectorAll('.slot-tile');
+  slotEls.forEach(el => {
+    if (el.textContent) el.classList.add('matched');
+  });
+
+  setTimeout(() => {
+    render();
+    // Check win
+    const remaining = tiles.filter(t => !t.removed && !t.inSlot).length;
+    if (remaining === 0 && slotTiles.length === 0) {
+      setTimeout(() => showOverlay('win'), 300);
+    } else if (slotTiles.length >= SLOT_MAX) {
+      setTimeout(() => showOverlay('gameover'), 300);
+    }
+  }, 450);
+}
+
+// ============ TOOLS ============
+function doUndo() {
+  if (isAnimating || tools.undo <= 0 || history.length === 0) return;
+  tools.undo--;
+  const last = history.pop();
+  // Restore tile
+  const tile = tiles.find(t => t.id === last.tileId);
+  if (tile) { tile.inSlot = false; tile.removed = false; }
+  // Restore slot
+  slotTiles = last.slotSnapshot;
+  render();
+}
+
+function doShuffle() {
+  if (isAnimating || tools.shuffle <= 0) return;
+  tools.shuffle--;
+  const remaining = tiles.filter(t => !t.removed && !t.inSlot);
+  const types = remaining.map(t => t.type);
+  shuffle(types);
+  remaining.forEach((t, i) => { t.type = types[i]; });
+  render();
+}
+
+function doBomb() {
+  if (isAnimating || tools.bomb <= 0 || slotTiles.length === 0) return;
+  tools.bomb--;
+  // Remove up to 3 tiles from slot back to a "discarded" state
+  const toRemove = slotTiles.splice(0, Math.min(3, slotTiles.length));
+  toRemove.forEach(s => {
+    const t = tiles.find(t => t.id === s.id);
+    if (t) { t.removed = true; t.inSlot = false; }
+  });
+  render();
+}
+
+// ============ OVERLAY ============
+function showOverlay(type) {
+  overlay.classList.add('show');
+  if (type === 'win') {
+    overlayTitle.textContent = '恭喜过关!';
+    overlayTitle.style.background = 'linear-gradient(90deg, #f7971e, #ffd200)';
+    overlayTitle.style.webkitBackgroundClip = 'text';
+    overlayTitle.style.webkitTextFillColor = 'transparent';
+    overlayMsg.textContent = `你成功通过了第 ${currentLevel + 1} 关!`;
+    overlayBtn.textContent = currentLevel + 1 < LEVELS.length ? '下一关' : '再玩一次';
+    overlayAction = () => {
+      overlay.classList.remove('show');
+      initLevel((currentLevel + 1) % LEVELS.length);
+    };
+    spawnConfetti();
+  } else {
+    overlayTitle.textContent = '游戏结束';
+    overlayTitle.style.background = 'linear-gradient(90deg, #e44d26, #f16529)';
+    overlayTitle.style.webkitBackgroundClip = 'text';
+    overlayTitle.style.webkitTextFillColor = 'transparent';
+    overlayMsg.textContent = '槽位已满，再试一次吧!';
+    overlayBtn.textContent = '重新开始';
+    overlayAction = () => {
+      overlay.classList.remove('show');
+      initLevel(currentLevel);
+    };
+  }
+}
+
+function onOverlayBtn() {
+  if (overlayAction) overlayAction();
+}
+
+function spawnConfetti() {
+  const colors = ['#f7971e','#ffd200','#ff6b6b','#48dbfb','#0abde3','#10ac84','#ee5a24'];
+  for (let i = 0; i < 50; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.left = Math.random() * 100 + 'vw';
+    el.style.background = colors[Math.floor(Math.random() * colors.length)];
+    el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    el.style.width = (6 + Math.random() * 8) + 'px';
+    el.style.height = (6 + Math.random() * 8) + 'px';
+    el.style.animationDuration = (1.5 + Math.random() * 2) + 's';
+    el.style.animationDelay = (Math.random() * 0.8) + 's';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+  }
+}
+
+// ============ PWA SERVICE WORKER ============
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// ============ START ============
+window.addEventListener('resize', () => { if (!isAnimating) render(); });
+initLevel(0);
+</script>
+</body>
+</html>
